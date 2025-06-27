@@ -16,3 +16,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+//menunggu POS Controller
+// Route::middleware(['auth', 'role:Owner,SuperAdmin,Kasir'])->group(function () {
+//     Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
+// });

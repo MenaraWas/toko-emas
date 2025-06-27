@@ -12,19 +12,23 @@ use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class BranchResource extends Resource
 {
     protected static ?string $model = Branch::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 //
+                Forms\Components\TextInput::make('name')->required(),
+                Forms\Components\Textarea::make('address')->nullable(),
+                Forms\Components\TextInput::make('phone')->nullable(),
             ]);
     }
 
@@ -64,5 +68,32 @@ class BranchResource extends Resource
             'create' => Pages\CreateBranch::route('/create'),
             'edit' => Pages\EditBranch::route('/{record}/edit'),
         ];
+    }
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+        if (!$user) return false;
+
+        return in_array($user->role->name, ['Owner', 'SuperAdmin']);
+    }
+
+    public static function canCreate(): bool
+    {
+        $user = auth()->user();
+        return $user->role->name === 'Owner';
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        $user = auth()->user();
+        return $user->role->name === 'Owner';
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = auth()->user();
+        if (!$user) return false;
+
+        return in_array($user->role->name, ['Owner', 'SuperAdmin']);
     }
 }
