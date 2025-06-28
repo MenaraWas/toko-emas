@@ -6,6 +6,7 @@ use App\Filament\Resources\RoleResource\Pages;
 use App\Filament\Resources\RoleResource\RelationManagers;
 use App\Models\Role;
 use Filament\Forms;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -14,6 +15,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+
 
 class RoleResource extends Resource
 {
@@ -27,6 +29,18 @@ class RoleResource extends Resource
             ->schema([
                 //
                 Forms\Components\TextInput::make('name')->required(),
+                Select::make('type')
+                    ->options([
+                        'management' => 'Management (Global)',
+                        'branch' => 'Cabang (Spesifik)',
+                    ])
+                    ->required()
+                    ->label('Tipe Role'),
+
+                Select::make('branch_id')
+                    ->label('Cabang')
+                    ->options(\App\Models\Branch::pluck('name', 'id'))
+                    ->visible(fn ($get) => $get('type') === 'branch'),
                 Forms\Components\Textarea::make('description')->nullable(),
             ]);
     }
@@ -37,6 +51,7 @@ class RoleResource extends Resource
             ->columns([
                 //
                 TextColumn::make('name')->searchable()->sortable(),
+                TextColumn::make('type')->searchable()->sortable(),
                 TextColumn::make('description'),
             ])
             ->filters([

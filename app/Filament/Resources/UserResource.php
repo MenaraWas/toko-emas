@@ -6,6 +6,7 @@ use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
 use App\Models\User;
 use Filament\Forms;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
@@ -17,7 +18,9 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+
 
 class UserResource extends Resource
 {
@@ -40,29 +43,31 @@ class UserResource extends Resource
                     ->required()
                     ->email()
                     ->unique(ignoreRecord:true),
+
                 Select::make('role_id')
                     ->label('Role')
-                    ->required()
                     ->options(function () {
                         $user = auth()->user();
 
-                        if (!$user) {
-                            return [];
-                        }
-
-                        if (in_array($user->role->name, ['Owner', 'SuperAdmin'])) {
-                            // Owner & SuperAdmin bisa assign semua role
+                        // Owner: semua role
+                        if ($user->role->name === 'Owner') {
                             return \App\Models\Role::pluck('name', 'id');
                         }
 
-                        if ($user->role->name === 'Admin Branch') {
-                            // Admin Branch hanya boleh assign Admin Branch dan Kasir
-                            return \App\Models\Role::whereIn('name', ['Admin Branch', 'Kasir'])->pluck('name', 'id');
+                        // SuperAdmin: semua role
+                        if ($user->role->name === 'SuperAdmin') {
+                            return \App\Models\Role::pluck('name', 'id');
                         }
 
-                        // Role lain tidak boleh assign apa-apa
-                        return [];
-                    }),
+                        // Admin Branch: role cabang sesuai branch + mapping role_assignable
+                        return DB::table('role_assignable')
+                            ->where('role_assignable.role_id', $user->role_id)
+                            ->join('roles', 'roles.id', '=', 'role_assignable.assignable_role_id')
+                            ->where('roles.type', 'branch')
+                            ->pluck('roles.name', 'roles.id');
+                    })
+                    ->required(),
+
                 Select::make('branch_id')
                     ->relationship('branch', 'name')
                     ->searchable()
@@ -80,6 +85,11 @@ class UserResource extends Resource
                         ->dehydrateStateUsing(fn($state)=> filled($state) ? Hash::make($state):null)
                         ->required(fn (string $context): bool => $context === 'create')
                         ->maxLength(255),
+                CheckboxList::make('permission')
+                    ->label('Permission Khusus (Tambahan)')
+                    ->relationship('permission', 'name')
+                    ->columns(2)
+                    ->helperText('Permission tambahan khusus user ini.')
             ])
             ->columns(2);
     }

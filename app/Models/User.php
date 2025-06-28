@@ -62,16 +62,17 @@ class User extends Authenticatable
         return $this->belongsToMany(Permission::class, 'user_permission');
     }
 
-    public function hasPermission($permName)
+    public function hasPermission($permission)
     {
-        //permission dari role
-        $rolePermissions = $this->role->permissions->pluck('name')->toArray();
+        // Cek permission dari role
+        $fromRole = $this->role
+            ? $this->role->permissions->contains('name', $permission)
+            : false;
 
-        //permission dari user
-        $userPermissions = $this->permissions->pluck('name')->toArray();
+        // Cek permission dari user_permission
+        $fromUser = $this->permissions->contains('name', $permission);
 
-        return in_array($permName, array_merge($rolePermissions, $userPermissions));
-
+        return $fromRole || $fromUser;
     }
 
     public function isSameBranch($branchId)
