@@ -130,25 +130,25 @@ class PermissionResource extends Resource
     public static function canViewAny(): bool
     {
         $user = Auth::user();
-        return $user && ($user->hasRole('owner') || $user->can('view_permissions'));
+        return $user && ($user->hasRole('owner') || $user->can('view.permissions'));
     }
 
     public static function canCreate(): bool
     {
         $user = Auth::user();
-        return $user && ($user->hasRole('owner') || $user->can('create_permissions'));
+        return $user && ($user->hasRole('owner') || $user->can('create.permissions'));
     }
 
     public static function canEdit($record): bool
     {
         $user = Auth::user();
-        return $user && ($user->hasRole('owner') || $user->can('update_permissions'));
+        return $user && ($user->hasRole('owner') || $user->can('update.permissions'));
     }
 
     public static function canDelete($record): bool
     {
         $user = Auth::user();
-        return $user && ($user->hasRole('owner') || $user->can('delete_permissions'));
+        return $user && ($user->hasRole('owner') || $user->can('delete.permissions'));
     }
 
     // Method untuk mendapatkan permission yang umum digunakan
@@ -156,28 +156,28 @@ class PermissionResource extends Resource
     {
         return [
             // User Management
-            'view_users' => 'Lihat Users',
-            'create_users' => 'Buat Users',
-            'update_users' => 'Update Users',
-            'delete_users' => 'Hapus Users',
+            'view.users' => 'Lihat Users',
+            'create.users' => 'Buat Users',
+            'update.users' => 'Update Users',
+            'delete.users' => 'Hapus Users',
             
             // Role Management
-            'view_roles' => 'Lihat Roles',
-            'create_roles' => 'Buat Roles',
-            'update_roles' => 'Update Roles',
-            'delete_roles' => 'Hapus Roles',
+            'view.roles' => 'Lihat Roles',
+            'create.roles' => 'Buat Roles',
+            'update.roles' => 'Update Roles',
+            'delete.roles' => 'Hapus Roles',
             
             // Permission Management
-            'view_permissions' => 'Lihat Permissions',
-            'create_permissions' => 'Buat Permissions',
-            'update_permissions' => 'Update Permissions',
-            'delete_permissions' => 'Hapus Permissions',
+            'view.permissions' => 'Lihat Permissions',
+            'create.permissions' => 'Buat Permissions',
+            'update.permissions' => 'Update Permissions',
+            'delete.permissions' => 'Hapus Permissions',
             
             // Cabang Management
-            'view_cabangs' => 'Lihat Cabang',
-            'create_cabangs' => 'Buat Cabang',
-            'update_cabangs' => 'Update Cabang',
-            'delete_cabangs' => 'Hapus Cabang',
+            'view.cabangs' => 'Lihat Cabang',
+            'create.cabangs' => 'Buat Cabang',
+            'update.cabangs' => 'Update Cabang',
+            'delete.cabangs' => 'Hapus Cabang',
         ];
     }
 }

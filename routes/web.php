@@ -16,3 +16,15 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/switch-branch/{branchId}', function ($branchId) {
+        if ($branchId === 'all') {
+            session()->forget('active_branch_id');
+            return back()->with('success', 'Berhasil reset cabang aktif.');
+        }
+
+        session(['active_branch_id' => $branchId]);
+        return back()->with('success', 'Cabang aktif diganti.');
+    })->name('switch-branch');
+});

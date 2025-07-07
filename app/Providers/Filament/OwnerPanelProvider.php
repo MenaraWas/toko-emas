@@ -39,6 +39,7 @@ class OwnerPanelProvider extends PanelProvider
             ->widgets([
                 Widgets\AccountWidget::class,
                 Widgets\FilamentInfoWidget::class,
+                \App\Filament\Widgets\BranchSwitcher::class,
             ])
             ->middleware([
                 EncryptCookies::class,

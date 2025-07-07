@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+
 // ⬇️ Tambahkan ini
 use Spatie\Permission\Traits\HasRoles;
 
@@ -34,6 +35,6 @@ class User extends Authenticatable
 
     public function cabang()
     {
-        return $this->belongsTo(\App\Models\Cabang::class);
+        return $this->belongsTo(Cabang::class);
     }
 }

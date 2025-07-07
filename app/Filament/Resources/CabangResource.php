@@ -85,24 +85,24 @@ class CabangResource extends Resource
     public static function canViewAny(): bool
     {
         $user = Auth::user();
-        return $user && $user->can('view_cabangs');
+        return $user && $user->can('cabang.view');
     }
 
     public static function canCreate(): bool
     {
         $user = Auth::user();
-        return $user && $user->can('create_cabangs');
+        return $user && $user->can('cabang.create');
     }
 
     public static function canEdit($record): bool
     {
         $user = Auth::user();
-        return $user && $user->can('update_cabangs');
+        return $user && $user->can('cabang.update');
     }
 
     public static function canDelete($record): bool
     {
         $user = Auth::user();
-        return $user && $user->can('delete_cabangs');
+        return $user && $user->can('cabang.delete');
     }
 }
