@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\RoleResource\Pages;
 
 use App\Filament\Resources\RoleResource;
+use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Support\Facades\Log;
 
 class CreateRole extends CreateRecord
 {
@@ -12,47 +12,35 @@ class CreateRole extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        Log::info('Form data before create:', $data);
-
         // Gabungkan role_type dan role_name menjadi name
         if (isset($data['role_type']) && isset($data['role_name'])) {
             $data['name'] = $data['role_type'] . '.' . $data['role_name'];
         }
 
-        // Hapus field yang tidak perlu disimpan ke database
-        unset($data['role_type'], $data['role_name'], $data['name_preview']);
+        // Jika bukan owner, pastikan role_type adalah cabang
+        if (!auth()->user()->hasRole('owner')) {
+            $data['role_type'] = 'cabang';
+            $data['name'] = 'cabang.' . $data['role_name'];
+        }
 
-        // Simpan permissions untuk diproses setelah create
-        $permissions = $data['permissions'] ?? [];
-        unset($data['permissions']);
-
-        // Simpan permissions di property untuk digunakan di afterCreate
-        $this->permissions = $permissions;
-
-        Log::info('Processed data for create:', $data);
+        // Hapus field yang tidak perlu disimpan
+        // Hapus field yang tidak perlu disimpan
+        unset($data['role_type'], $data['role_name'], $data['name_preview'], $data['permissions']);
 
         return $data;
     }
 
     protected function afterCreate(): void
     {
-        $role = $this->getRecord();
-        
-        Log::info('Role created:', [
-            'id' => $role->id,
-            'name' => $role->name,
-        ]);
-
-        // Sinkronkan permissions jika ada
-        if (isset($this->permissions) && !empty($this->permissions)) {
-            $role->syncPermissions($this->permissions);
-            
-            Log::info('Permissions synced:', [
-                'role_id' => $role->id,
-                'permissions' => $this->permissions,
-            ]);
+        // Sync permissions setelah role dibuat
+        if (isset($this->data['permissions']) && is_array($this->data['permissions'])) {
+            $permissions = \Spatie\Permission\Models\Permission::whereIn('name', $this->data['permissions'])->get();
+            $this->record->syncPermissions($permissions);
         }
     }
 
-    protected $permissions = [];
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }

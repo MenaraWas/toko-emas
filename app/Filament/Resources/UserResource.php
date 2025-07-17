@@ -18,8 +18,10 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\BadgeColumn;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Closure;
 
 class UserResource extends Resource
 {
@@ -65,17 +67,35 @@ class UserResource extends Resource
                     $query->where('name', 'like', 'cabang.%');
                 }
 
-                return $query
-                    ->get()
-                    ->mapWithKeys(function ($role) {
-                        // tampilkan label lebih rapi
-                        $label = ucfirst(str_replace(['cabang.', 'pusat.'], '', $role->name));
-                        return [$role->id => $label];
-                    });
+                return $query->get()->mapWithKeys(function ($role) {
+                    // tampilkan label lebih rapi
+                    $label = match(true) {
+                        str_starts_with($role->name, 'cabang.') => 'Cabang: ' . ucfirst(str_replace('cabang.', '', $role->name)),
+                        str_starts_with($role->name, 'pusat.') => 'Pusat: ' . ucfirst(str_replace('pusat.', '', $role->name)),
+                        default => ucfirst($role->name)
+                    };
+                    return [$role->id => $label];
+                });
             })
             ->required()
             ->searchable()
-            ->placeholder('Select roles');
+            ->placeholder('Select roles')
+            ->rules([
+                function () {
+                    return function (string $attribute, $value, \Closure $fail) {
+                        if (!auth()->user()->hasRole('owner')) {
+                            $invalidRoles = collect($value)->filter(function ($roleId) {
+                                $role = \Spatie\Permission\Models\Role::find($roleId);
+                                return !str_starts_with($role->name, 'cabang.');
+                            });
+                            
+                            if ($invalidRoles->isNotEmpty()) {
+                                $fail('You can only assign branch-level roles.');
+                            }
+                        }
+                    };
+                }
+            ]);
 
         return $form
             ->schema([
@@ -92,13 +112,19 @@ class UserResource extends Resource
                             ->maxLength(255)
                             ->unique(ignoreRecord: true)
                             ->placeholder('Enter email address'),
+                        
+                        TextInput::make('phone')
+                            ->tel()
+                            ->maxLength(20)
+                            ->placeholder('Enter phone number'),
                     ]),
 
                 Section::make('Assignment')
                     ->schema($assignmentFields),
 
-                Section::make('Security')
+                Section::make('Status & Security')
                     ->schema([
+                                                
                         TextInput::make('password')
                             ->password()
                             ->maxLength(255)
@@ -126,6 +152,11 @@ class UserResource extends Resource
                     ->sortable()
                     ->icon('heroicon-m-envelope'),
                 
+                TextColumn::make('phone')
+                    ->searchable()
+                    ->icon('heroicon-m-phone')
+                    ->placeholder('No phone'),
+                
                 TextColumn::make('cabang.nama')
                     ->label('Cabang')
                     ->sortable()
@@ -135,8 +166,16 @@ class UserResource extends Resource
                 TextColumn::make('roles.name')
                     ->label('Role')
                     ->badge()
-                    ->color('success'),
+                    ->color('success')
+                    ->formatStateUsing(function ($state) {
+                        return match(true) {
+                            str_starts_with($state, 'cabang.') => 'Cabang: ' . ucfirst(str_replace('cabang.', '', $state)),
+                            str_starts_with($state, 'pusat.') => 'Pusat: ' . ucfirst(str_replace('pusat.', '', $state)),
+                            default => ucfirst($state)
+                        };
+                    }),
                 
+                                
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -148,17 +187,40 @@ class UserResource extends Resource
                     ->label('Cabang')
                     ->options(Cabang::all()->pluck('nama', 'id'))
                     ->visible(fn () => Auth::user() && Auth::user()->hasRole('owner')),
+                
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'active' => 'Active',
+                        'inactive' => 'Inactive',
+                        'suspended' => 'Suspended'
+                    ]),
+                
+                Tables\Filters\SelectFilter::make('roles')
+                    ->relationship('roles', 'name')
+                    ->label('Role')
+                    ->multiple()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-                    ->requiresConfirmation(),
+                    ->requiresConfirmation()
+                    ->visible(fn (Model $record): bool => static::canDelete($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->requiresConfirmation(),
+                        ->requiresConfirmation()
+                        ->action(function (Collection $records) {
+                            // Custom validation before bulk delete
+                            $records->each(function ($record) {
+                                if (!static::canDelete($record)) {
+                                    throw new \Exception("You don't have permission to delete {$record->name}");
+                                }
+                            });
+                            $records->each->delete();
+                        }),
                 ]),
             ]);
     }
@@ -195,17 +257,38 @@ class UserResource extends Resource
     public static function canEdit(Model $record): bool
     {
         $user = Auth::user();
-        return $user &&
-            $user->can('user.update') &&
-            ($user->hasRole('owner') || $record->cabang_id === $user->cabang_id);
+        if (!$user || !$user->can('user.update')) {
+            return false;
+        }
+        
+        // Owner bisa edit semua
+        if ($user->hasRole('owner')) {
+            return true;
+        }
+        
+        // Non-owner hanya bisa edit user di cabang yang sama
+        return $record->cabang_id === $user->cabang_id;
     }
 
     public static function canDelete(Model $record): bool
     {
         $user = Auth::user();
-        return $user && 
-            $user->can('user.delete') &&
-            ($user->hasRole('owner') || $record->cabang_id === $user->cabang_id);
+        if (!$user || !$user->can('user.delete')) {
+            return false;
+        }
+        
+        // Tidak bisa delete diri sendiri
+        if ($record->id === $user->id) {
+            return false;
+        }
+        
+        // Owner bisa delete semua (kecuali diri sendiri)
+        if ($user->hasRole('owner')) {
+            return true;
+        }
+        
+        // Non-owner hanya bisa delete user di cabang yang sama
+        return $record->cabang_id === $user->cabang_id;
     }
 
     public static function canView(Model $record): bool
@@ -222,10 +305,9 @@ class UserResource extends Resource
 
     public static function getGloballySearchableAttributes(): array
     {
-        return ['name', 'email'];
+        return ['name', 'email', 'phone'];
     }
 
-    // Fixed: Menghapus duplikasi method getEloquentQuery dan menggabungkan logikanya
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();

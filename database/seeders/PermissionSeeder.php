@@ -17,20 +17,11 @@ class PermissionSeeder extends Seeder
     {
         //
         $permissions = [
-           'user.view',
-            'user.create',
-            'user.update',
-            'user.delete',
-
-            'role.view',
-            'role.create',
-            'role.update',
-            'role.delete',
-
-            'cabang.view',
-            'cabang.create',
-            'cabang.update',
-            'cabang.delete',
+            'product.view',
+            'product.create',
+            'product.update',
+            'product.delete',
+            'product.approve',
             // Tambahkan permission lain nanti
         ];
 

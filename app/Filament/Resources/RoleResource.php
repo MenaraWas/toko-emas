@@ -4,7 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\RoleResource\Pages;
 use App\Filament\Resources\RoleResource\RelationManagers;
-use App\Models\Role;
+use Spatie\Permission\Models\Role;
 use Filament\Forms;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Section;
@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Collection;
 
 class RoleResource extends Resource
 {
@@ -32,16 +33,22 @@ class RoleResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $isOwner = auth()->user()?->hasRole('owner') ?? false;
+        
         return $form
             ->schema([
                 Section::make('Role Information')
                     ->schema([
                         Select::make('role_type')
                             ->label('Tipe Role')
-                            ->options([
-                                'pusat' => 'Role Pusat',
-                                'cabang' => 'Role Cabang',
-                            ])
+                            ->options(function () use ($isOwner) {
+                                $options = [];
+                                if ($isOwner) {
+                                    $options['pusat'] = 'Role Pusat';
+                                }
+                                $options['cabang'] = 'Role Cabang';
+                                return $options;
+                            })
                             ->required()
                             ->live()
                             ->afterStateUpdated(function ($state, $get, $set) {
@@ -51,7 +58,11 @@ class RoleResource extends Resource
                                     $set('name_preview', $state . '.' . $roleName);
                                 }
                             })
-                            ->helperText('Pilih apakah role ini untuk pusat atau cabang.'),
+                            ->helperText('Pilih apakah role ini untuk pusat atau cabang.')
+                            ->default(function () use ($isOwner) {
+                                return $isOwner ? null : 'cabang';
+                            })
+                            ->disabled(fn ($context) => $context === 'edit'), // Disable saat edit
 
                         TextInput::make('role_name')
                             ->label('Nama Role')
@@ -65,6 +76,20 @@ class RoleResource extends Resource
                                     $set('name_preview', $roleType . '.' . $state);
                                 }
                             })
+                            ->rules([
+                                function ($get) {
+                                    return function (string $attribute, $value, \Closure $fail) use ($get) {
+                                        $roleType = $get('role_type');
+                                        if ($roleType && $value) {
+                                            $fullName = $roleType . '.' . $value;
+                                            $existingRole = Role::where('name', $fullName)->first();
+                                            if ($existingRole) {
+                                                $fail('Role dengan nama "' . $fullName . '" sudah ada.');
+                                            }
+                                        }
+                                    };
+                                }
+                            ])
                             ->helperText('Hanya nama tanpa prefix. Misal: admin_keuangan')
                             ->placeholder('admin_keuangan'),
 
@@ -79,9 +104,19 @@ class RoleResource extends Resource
                     ->schema([
                         CheckboxList::make('permissions')
                             ->label('Permissions')
-                            ->options(
-                                \Spatie\Permission\Models\Permission::all()->pluck('name', 'name')
-                            )
+                            ->options(function () use ($isOwner) {
+                                $permissions = \Spatie\Permission\Models\Permission::all();
+                                
+                                if (!$isOwner) {
+                                    // Non-owner hanya bisa assign permission cabang
+                                    $permissions = $permissions->filter(function ($permission) {
+                                        return str_contains($permission->name, 'cabang') || 
+                                               !str_contains($permission->name, 'pusat');
+                                    });
+                                }
+                                
+                                return $permissions->pluck('name', 'name');
+                            })
                             ->columns(2)
                             ->searchable()
                             ->bulkToggleable()
@@ -108,6 +143,15 @@ class RoleResource extends Resource
                             return 'warning';
                         }
                         return 'gray';
+                    })
+                    ->formatStateUsing(function ($state) {
+                        // Format tampilan role name
+                        if (str_starts_with($state, 'pusat.')) {
+                            return 'Pusat: ' . ucfirst(str_replace('pusat.', '', $state));
+                        } elseif (str_starts_with($state, 'cabang.')) {
+                            return 'Cabang: ' . ucfirst(str_replace('cabang.', '', $state));
+                        }
+                        return ucfirst($state);
                     }),
                 
                 TextColumn::make('permissions_count')
@@ -115,6 +159,12 @@ class RoleResource extends Resource
                     ->label('Permissions Count')
                     ->badge()
                     ->color('success'),
+                
+                TextColumn::make('users_count')
+                    ->counts('users')
+                    ->label('Users Count')
+                    ->badge()
+                    ->color('primary'),
                 
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -129,7 +179,7 @@ class RoleResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('role_type')
                     ->label('Tipe Role')
-                    ->options([
+                    ->options([ 
                         'pusat' => 'Role Pusat',
                         'cabang' => 'Role Cabang',
                     ])
@@ -142,14 +192,34 @@ class RoleResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (Model $record): bool => static::canEdit($record)),
                 Tables\Actions\DeleteAction::make()
-                    ->requiresConfirmation(),
+                    ->requiresConfirmation()
+                    ->visible(fn (Model $record): bool => static::canDelete($record))
+                    ->action(function (Model $record) {
+                        // Cek apakah role masih digunakan
+                        if ($record->users()->count() > 0) {
+                            throw new \Exception('Role tidak dapat dihapus karena masih digunakan oleh user.');
+                        }
+                        $record->delete();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->requiresConfirmation(),
+                        ->requiresConfirmation()
+                        ->action(function (Collection $records) {
+                            foreach ($records as $record) {
+                                if (!static::canDelete($record)) {
+                                    throw new \Exception("You don't have permission to delete role: {$record->name}");
+                                }
+                                if ($record->users()->count() > 0) {
+                                    throw new \Exception("Role {$record->name} cannot be deleted because it's still in use.");
+                                }
+                            }
+                            $records->each->delete();
+                        }),
                 ]),
             ])
             ->defaultSort('name');
@@ -187,13 +257,39 @@ class RoleResource extends Resource
     public static function canEdit(Model $record): bool
     {
         $user = Auth::user();
-        return $user && $user->can('role.update');
+        if (!$user || !$user->can('role.update')) {
+            return false;
+        }
+        
+        // Owner bisa edit semua role
+        if ($user->hasRole('owner')) {
+            return true;
+        }
+        
+        // Non-owner hanya bisa edit role cabang
+        return str_starts_with($record->name, 'cabang.');
     }
 
     public static function canDelete(Model $record): bool
     {
         $user = Auth::user();
-        return $user && $user->can('role.delete');
+        if (!$user || !$user->can('role.delete')) {
+            return false;
+        }
+        
+        // Tidak bisa delete role sistem
+        $systemRoles = ['owner', 'super_admin'];
+        if (in_array($record->name, $systemRoles)) {
+            return false;
+        }
+        
+        // Owner bisa delete semua role (kecuali sistem)
+        if ($user->hasRole('owner')) {
+            return true;
+        }
+        
+        // Non-owner hanya bisa delete role cabang
+        return str_starts_with($record->name, 'cabang.');
     }
 
     public static function canView(Model $record): bool
@@ -211,5 +307,19 @@ class RoleResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['name'];
+    }
+
+    // Query modifier untuk filter berdasarkan role user
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
+
+        if ($user && !$user->hasRole('owner')) {
+            // Non-owner hanya bisa lihat role cabang
+            $query->where('name', 'like', 'cabang.%');
+        }
+
+        return $query;
     }
 }

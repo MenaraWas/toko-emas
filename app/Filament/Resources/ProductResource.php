@@ -3,20 +3,20 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductResource\Pages;
-use App\Filament\Resources\ProductResource\RelationManagers;
 use App\Models\Product;
 use Filament\Forms;
-use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
-
+use Filament\Tables\Actions\EditAction;
+use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\BulkActionGroup;
 
 class ProductResource extends Resource
 {
@@ -31,12 +31,11 @@ class ProductResource extends Resource
     {
         return $form
             ->schema([
-                //
                 TextInput::make('kode')
                     ->label('Kode Barang')
                     ->default(function () {
                         $prefix = 'EMAS-' . now()->format('Ym');
-                        $count = \App\Models\Product::where('kode', 'like', $prefix . '%')->count() + 1;
+                        $count = Product::where('kode', 'like', $prefix . '%')->count() + 1;
                         return $prefix . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
                     })
                     ->disabled()
@@ -48,20 +47,20 @@ class ProductResource extends Resource
                         ignoreRecord: true
                     ),
 
-                Forms\Components\TextInput::make('nama')
+                TextInput::make('nama')
                     ->label('Nama Barang')
                     ->required(),
 
-                Forms\Components\TextInput::make('karat')
+                TextInput::make('karat')
                     ->label('Karat')
                     ->placeholder('Misal: 24K'),
 
-                Forms\Components\TextInput::make('berat')
+                TextInput::make('berat')
                     ->label('Berat (gram)')
                     ->numeric()
                     ->suffix('gram'),
 
-                Forms\Components\TextInput::make('harga_dasar')
+                TextInput::make('harga_dasar')
                     ->label('Harga Dasar')
                     ->numeric()
                     ->prefix('Rp'),
@@ -71,11 +70,11 @@ class ProductResource extends Resource
                     ->label('Foto Barang')
                     ->image()
                     ->imageEditor()
-                    ->conversion('thumb') // gunakan thumbnail otomatis
-                    ->maxFiles(3) // maksimal 3 foto per produk
-                    ->required(), // opsional: wajib upload
+                    ->conversion('thumb')
+                    ->maxFiles(3)
+                    ->required(),
 
-                Forms\Components\Toggle::make('aktif')
+                Toggle::make('aktif')
                     ->label('Aktif')
                     ->default(true),
             ]);
@@ -85,7 +84,6 @@ class ProductResource extends Resource
     {
         return $table
             ->columns([
-                //
                 SpatieMediaLibraryImageColumn::make('foto')
                     ->collection('produk')
                     ->conversion('thumb')
@@ -115,24 +113,49 @@ class ProductResource extends Resource
                     ->label('Aktif'),
             ])
             ->defaultSort('nama')
-            ->filters([
-                //
-            ])
+            ->filters([])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                EditAction::make()
+                    ->visible(fn () => Auth::user()?->can('product.edit')),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make()
+                        ->visible(fn () => Auth::user()?->can('product.delete')),
                 ]),
             ]);
     }
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
+    }
+
+    // Tampilkan hanya jika user punya permission view
+    public static function shouldRegisterNavigation(): bool
+    {
+        return Auth::check() && Auth::user()->can('product.view');
+    }
+
+    // Batasi akses halaman tertentu berdasarkan permission
+    public static function canViewAny(): bool
+    {
+        return Auth::check() && Auth::user()->can('product.view');
+    }
+
+    public static function canCreate(): bool
+    {
+        return Auth::check() && Auth::user()->can('product.create');
+    }
+
+    public static function canEdit($record): bool
+    {
+        return Auth::check() && Auth::user()->can('product.edit');
+    }
+
+    public static function canDelete($record): bool
+    {
+        return Auth::check() && Auth::user()->can('product.delete');
     }
 
     public static function getPages(): array
